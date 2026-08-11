@@ -7,6 +7,7 @@ local thumbnail_settings = require("ThumbnailGenerator.modules.thumbnail_setting
 local subject_resolver = require("ThumbnailGenerator.modules.subject_resolver")
 local rotation_exceptions = require("ThumbnailGenerator.modules.rotation_exceptions")
 local scene_builder = require("ThumbnailGenerator.modules.scene_builder")
+local actors_metadata = require("ThumbnailGenerator.modules.actors_metadata")
 local settings = thumbnail_settings
 local ir = require("image_resize.image_resize")
 
@@ -170,6 +171,8 @@ local function exportSubject(subject)
     local exportDir = settings.getOutputFolder() .. "\\exports"
     renderer.ensureDirectory(exportDir .. "\\")
     local fullPath = (exportDir .. "\\" .. safeName .. ".nif"):gsub("[/\\]+", "\\")
+
+    actors_metadata.attach(obj, exportRoot)
 
     exportRoot:update()
     exportRoot:saveBinary(fullPath)

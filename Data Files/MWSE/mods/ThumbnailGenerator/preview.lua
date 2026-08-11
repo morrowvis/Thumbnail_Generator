@@ -11,6 +11,7 @@ local preview_pickers = require("ThumbnailGenerator.modules.preview_pickers")
 local profiles = require("ThumbnailGenerator.modules.profiles")
 local camera_profiles = require("ThumbnailGenerator.modules.camera_profiles")
 local scene_builder = require("ThumbnailGenerator.modules.scene_builder")
+local actors_metadata = require("ThumbnailGenerator.modules.actors_metadata")
 
 local backgroundMenuID = "ThumbnailGen:PreviewBackground"
 local controlsMenuID = "ThumbnailGen:PreviewControls"
@@ -1012,6 +1013,8 @@ function this.open(objOrSubject, options)
         local exportDir = settings.getOutputFolder() .. "\\exports"
         render.ensureDirectory(exportDir .. "\\")
         local fullPath = (exportDir .. "\\" .. safeName .. ".nif"):gsub("[/\\]+", "\\")
+
+        actors_metadata.attach(obj, exportRoot)
 
         exportRoot:update()
         exportRoot:saveBinary(fullPath)
