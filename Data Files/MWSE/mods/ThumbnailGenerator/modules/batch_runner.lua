@@ -8,6 +8,7 @@ local subject_resolver = require("ThumbnailGenerator.modules.subject_resolver")
 local rotation_exceptions = require("ThumbnailGenerator.modules.rotation_exceptions")
 local scene_builder = require("ThumbnailGenerator.modules.scene_builder")
 local actors_metadata = require("ThumbnailGenerator.modules.actors_metadata")
+local npc_variants = require("ThumbnailGenerator.modules.npc_variants")
 local settings = thumbnail_settings
 local ir = require("image_resize.image_resize")
 
@@ -128,55 +129,82 @@ end
 
 -- Exports a single subject as a .nif file into <output>\exports, mirroring the
 -- preview's Export button. Returns the written path, or errors on failure.
+-- An NPC with levelled equipment may write several files (see npc_variants);
+-- the last path is returned.
 local function exportSubject(subject)
     local obj = subject.object
-    local exportRoot
+    local total, attempts = npc_variants.plan(obj)
+    local seen, written, lastPath = {}, 0, nil
+    local sinceNew = 0
 
-    if obj and (obj.objectType == tes3.objectType.npc
-            or obj.objectType == tes3.objectType.creature) then
-        local wrapper = scene_builder.createActorScene(obj)
-        exportRoot = wrapper.children[1]
-        wrapper:detachChild(exportRoot)
-    else
-        local mesh = tes3.loadMesh(subject.meshPath)
-        if not mesh then
-            error("Failed to load mesh: " .. tostring(subject.meshPath))
-        end
-        exportRoot = mesh:clone()
-    end
+    for _ = 1, attempts do
+        local exportRoot, signature
 
-    exportRoot.translation = tes3vector3.new(0, 0, 0)
-
-    local mode = settings.current.exportFilename
-    local rawName
-    if mode == "id" then
-        rawName = subject.recordId or subject.displayName
-    elseif mode == "mesh" then
-        if obj and obj.objectType == tes3.objectType.npc then
-            rawName = subject.recordId
+        if obj and (obj.objectType == tes3.objectType.npc
+                or obj.objectType == tes3.objectType.creature) then
+            local wrapper
+            wrapper, signature = scene_builder.createActorScene(obj)
+            exportRoot = wrapper.children[1]
+            wrapper:detachChild(exportRoot)
         else
-            local meshPath = subject.normalizedMeshPath
-            if meshPath and meshPath ~= "" then
-                rawName = meshPath:match("[^/]+$") or meshPath
+            local mesh = tes3.loadMesh(subject.meshPath)
+            if not mesh then
+                error("Failed to load mesh: " .. tostring(subject.meshPath))
             end
-            rawName = rawName or subject.recordId or subject.displayName
+            exportRoot = mesh:clone()
         end
-    else
-        rawName = subject.displayName or subject.recordId
+
+        -- same outfit as an earlier roll = same mesh; roll again instead
+        local duplicate = total > 1 and written > 0
+            and (signature == nil or seen[signature])
+        if not duplicate then
+            if signature then seen[signature] = true end
+            written = written + 1
+
+            exportRoot.translation = tes3vector3.new(0, 0, 0)
+
+            local mode = settings.current.exportFilename
+            local rawName
+            if mode == "id" then
+                rawName = subject.recordId or subject.displayName
+            elseif mode == "mesh" then
+                if obj and obj.objectType == tes3.objectType.npc then
+                    rawName = subject.recordId
+                else
+                    local meshPath = subject.normalizedMeshPath
+                    if meshPath and meshPath ~= "" then
+                        rawName = meshPath:match("[^/]+$") or meshPath
+                    end
+                    rawName = rawName or subject.recordId or subject.displayName
+                end
+            else
+                rawName = subject.displayName or subject.recordId
+            end
+            rawName = rawName or "export"
+            local safeName = rawName:gsub("[^%w %._-]", "_")
+                .. npc_variants.suffix(written, total)
+            exportRoot.name = safeName
+
+            local exportDir = settings.getOutputFolder() .. "\\exports"
+            renderer.ensureDirectory(exportDir .. "\\")
+            lastPath = (exportDir .. "\\" .. safeName .. ".nif"):gsub("[/\\]+", "\\")
+
+            actors_metadata.attach(obj, exportRoot)
+
+            exportRoot:update()
+            exportRoot:saveBinary(lastPath)
+            sinceNew = 0
+        else
+            sinceNew = sinceNew + 1
+        end
+
+        -- list that never changes the outfit: stop paying for scene builds
+        if written >= total or sinceNew >= npc_variants.giveUpAfter then
+            break
+        end
     end
-    rawName = rawName or "export"
-    local safeName = rawName:gsub("[^%w %._-]", "_")
-    exportRoot.name = safeName
 
-    local exportDir = settings.getOutputFolder() .. "\\exports"
-    renderer.ensureDirectory(exportDir .. "\\")
-    local fullPath = (exportDir .. "\\" .. safeName .. ".nif"):gsub("[/\\]+", "\\")
-
-    actors_metadata.attach(obj, exportRoot)
-
-    exportRoot:update()
-    exportRoot:saveBinary(fullPath)
-    return fullPath
+    return lastPath
 end
 
 -- Two phases per frame: reclaim completed compression jobs, then submit new

@@ -7,6 +7,7 @@ local this = {}
 local bit = require("bit")
 
 local settings = require("ThumbnailGenerator.modules.thumbnail_settings")
+local npc_variants = require("ThumbnailGenerator.modules.npc_variants")
 
 -- Animation text keys ("Idle: Loop Start") live in the keyframe manager's
 -- sequences, not node extra data; one key's text can hold several markers.
@@ -90,6 +91,9 @@ end
 
 -- Actor visuals/animations are wired up at instancing time, not on the record:
 -- spawn a temporary reference, pose it, clone the scene node, delete the reference.
+-- Returns the scene, and the instance's equipment signature as a second value -
+-- levelled lists resolve per reference, so this is what tells one roll of the
+-- same NPC from another. Existing callers can ignore it.
 function this.createActorScene(actor)
     local player = tes3.player
     local ref = tes3.createReference({
@@ -100,10 +104,13 @@ function this.createActorScene(actor)
         orientation = tes3vector3.new(0, 0, 0),
     })
 
+    local signature
     local ok, result = pcall(function()
         if not ref or not ref.sceneNode then
             error("Failed to instance actor reference: " .. tostring(actor.id))
         end
+        -- read before the reference is deleted below
+        signature = npc_variants.signature(ref)
 
         -- Idle loop midpoint = settled stance; engine timing is the fallback.
         local textKeys = collectTextKeys(ref.sceneNode)
@@ -167,7 +174,7 @@ function this.createActorScene(actor)
     if not ok then
         error(result)
     end
-    return result
+    return result, signature
 end
 
 -- Without the Follow bit, particles stay where the mesh first loaded instead

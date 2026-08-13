@@ -48,7 +48,7 @@ function this.registerModConfig()
 
     local settingsPage = template:createSideBarPage({
         label = "Settings",
-        description = "Configure output, camera, batch and preview.",
+        description = "Configure batch and preview.",
     })
 
     local resolutionOptions = {}
@@ -108,6 +108,7 @@ function this.registerModConfig()
         },
         variable = mwse.mcm.createTableVariable({ id = "batchMode", table = settings.current }),
     })
+
 
     group:createDropdown({
         label = "Render Resolution",
@@ -188,9 +189,19 @@ function this.registerModConfig()
         variable = mwse.mcm.createTableVariable({ id = "previewOutputFormat", table = settings.current }),
     })
 
+    group = settingsPage:createCategory("Profiles")
+
+    group:createYesNoButton({
+        label = "Use Profiles",
+        description = "Apply camera and lighting saved from the preview's Save Profile button, in both batch renders and previews.",
+        variable = mwse.mcm.createTableVariable({ id = "useProfiles", table = settings.current }),
+    })
+
+    group = settingsPage:createCategory("Export")
+
     group:createDropdown({
         label = "Export Filename",
-        description = "Filename used by the preview window's Export button:\n\z
+        description = "Filename used when exporting:\n\z
             the record's display name, its record id, or the mesh file's base name (NPCs fall back to their id).",
         options = {
             { label = "ID", value = "id" },
@@ -200,14 +211,14 @@ function this.registerModConfig()
         variable = mwse.mcm.createTableVariable({ id = "exportFilename", table = settings.current }),
     })
 
-    group = settingsPage:createCategory("Profiles")
-
-    group:createYesNoButton({
-        label = "Use Profiles",
-        description = "Apply profiles saved from the preview's Save Profile button: matching records inherit the profile's camera, lighting, ortho/fit, and zoom/pan in both batch renders and previews.\n\z
-            Scope precedence: search > type > all; latest saved wins.\n\z
-            Each profile is its own file under the output folder's \"profiles\" subfolder; delete a file to remove its profile (loaded at startup).",
-        variable = mwse.mcm.createTableVariable({ id = "useProfiles", table = settings.current }),
+    group:createSlider({
+        label = "NPC Variants",
+        description = "Maximum copies to export for an NPC whose equipment comes from a levelled list, each a separate roll.",
+        min = 1,
+        max = 5,
+        step = 1,
+        jump = 1,
+        variable = mwse.mcm.createTableVariable({ id = "npcVariants", table = settings.current }),
     })
 
     mwse.mcm.register(template)

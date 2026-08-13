@@ -76,6 +76,11 @@ local config = {
     -- since they have no single mesh).
     exportFilename = "mesh",
 
+    -- Copies to export for an NPC whose equipment comes from a levelled list.
+    -- 1 = one export, as before. Rolls that come out wearing the same thing are
+    -- discarded, so this is a maximum, not a guarantee.
+    npcVariants = 1,
+
     -- Config-only (no MCM)
     previewForceVertexLighting = false,
     previewDollyFit = false,

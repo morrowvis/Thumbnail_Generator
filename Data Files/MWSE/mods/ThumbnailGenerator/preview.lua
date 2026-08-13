@@ -12,6 +12,7 @@ local profiles = require("ThumbnailGenerator.modules.profiles")
 local camera_profiles = require("ThumbnailGenerator.modules.camera_profiles")
 local scene_builder = require("ThumbnailGenerator.modules.scene_builder")
 local actors_metadata = require("ThumbnailGenerator.modules.actors_metadata")
+local npc_variants = require("ThumbnailGenerator.modules.npc_variants")
 
 local backgroundMenuID = "ThumbnailGen:PreviewBackground"
 local controlsMenuID = "ThumbnailGen:PreviewControls"
@@ -962,63 +963,91 @@ function this.open(objOrSubject, options)
     -- A basic clone: NPCs/creatures export their full posed hierarchy (skeleton
     -- + skinned meshes, skin refs rebound by name -- the "standard" export),
     -- everything else exports a plain clone of its mesh.
+    -- An NPC whose equipment comes from a levelled list can write several files,
+    -- one per distinct roll - see modules/npc_variants.lua. Returns the last path
+    -- written, and how many were written.
     local function exportSubject()
         local obj = subject.object
-        local exportRoot
+        local total, attempts = npc_variants.plan(obj)
+        local seen, written, lastPath = {}, 0, nil
+        local sinceNew = 0
 
-        if obj and (obj.objectType == tes3.objectType.npc
-                or obj.objectType == tes3.objectType.creature) then
-            -- createActorScene wraps the posed clone so preview repositioning can't
-            -- disturb it; for export we want the clone itself as the file root, since
-            -- it carries the racial height/weight scale on its transform.
-            local wrapper = scene_builder.createActorScene(obj)
-            exportRoot = wrapper.children[1]
-            wrapper:detachChild(exportRoot)
-        else
-            local mesh = tes3.loadMesh(subject.meshPath)
-            if not mesh then
-                error("Failed to load mesh: " .. tostring(subject.meshPath))
-            end
-            exportRoot = mesh:clone()
-        end
+        for _ = 1, attempts do
+            local exportRoot, signature
 
-        -- Drop world placement; keep the transform's scale/rotation (size + pose).
-        exportRoot.translation = tes3vector3.new(0, 0, 0)
-
-        -- Filename per the MCM option: display name, record id, or mesh base name.
-        -- Each falls back so a missing value never yields an empty filename.
-        local mode = settings.current.exportFilename
-        local rawName
-        if mode == "id" then
-            rawName = subject.recordId or subject.displayName
-        elseif mode == "mesh" then
-            -- NPCs are assembled from many meshes, so there is no single mesh name
-            -- to use; fall back to the record id for them.
-            if obj and obj.objectType == tes3.objectType.npc then
-                rawName = subject.recordId
+            if obj and (obj.objectType == tes3.objectType.npc
+                    or obj.objectType == tes3.objectType.creature) then
+                -- createActorScene wraps the posed clone so preview repositioning can't
+                -- disturb it; for export we want the clone itself as the file root, since
+                -- it carries the racial height/weight scale on its transform.
+                local wrapper
+                wrapper, signature = scene_builder.createActorScene(obj)
+                exportRoot = wrapper.children[1]
+                wrapper:detachChild(exportRoot)
             else
-                local meshPath = subject.normalizedMeshPath
-                if meshPath and meshPath ~= "" then
-                    rawName = meshPath:match("[^/]+$") or meshPath
+                local mesh = tes3.loadMesh(subject.meshPath)
+                if not mesh then
+                    error("Failed to load mesh: " .. tostring(subject.meshPath))
                 end
-                rawName = rawName or subject.recordId or subject.displayName
+                exportRoot = mesh:clone()
             end
-        else
-            rawName = subject.displayName or subject.recordId
+
+            -- same outfit as an earlier roll = same mesh; roll again instead
+            local duplicate = total > 1 and written > 0
+                and (signature == nil or seen[signature])
+            if not duplicate then
+                if signature then seen[signature] = true end
+                written = written + 1
+
+                -- Drop world placement; keep the transform's scale/rotation (size + pose).
+                exportRoot.translation = tes3vector3.new(0, 0, 0)
+
+                -- Filename per the MCM option: display name, record id, or mesh base name.
+                -- Each falls back so a missing value never yields an empty filename.
+                local mode = settings.current.exportFilename
+                local rawName
+                if mode == "id" then
+                    rawName = subject.recordId or subject.displayName
+                elseif mode == "mesh" then
+                    -- NPCs are assembled from many meshes, so there is no single mesh name
+                    -- to use; fall back to the record id for them.
+                    if obj and obj.objectType == tes3.objectType.npc then
+                        rawName = subject.recordId
+                    else
+                        local meshPath = subject.normalizedMeshPath
+                        if meshPath and meshPath ~= "" then
+                            rawName = meshPath:match("[^/]+$") or meshPath
+                        end
+                        rawName = rawName or subject.recordId or subject.displayName
+                    end
+                else
+                    rawName = subject.displayName or subject.recordId
+                end
+                rawName = rawName or "export"
+                local safeName = rawName:gsub("[^%w %._-]", "_")
+                    .. npc_variants.suffix(written, total)
+                exportRoot.name = safeName
+
+                local exportDir = settings.getOutputFolder() .. "\\exports"
+                render.ensureDirectory(exportDir .. "\\")
+                lastPath = (exportDir .. "\\" .. safeName .. ".nif"):gsub("[/\\]+", "\\")
+
+                actors_metadata.attach(obj, exportRoot)
+
+                exportRoot:update()
+                exportRoot:saveBinary(lastPath)
+                sinceNew = 0
+            else
+                sinceNew = sinceNew + 1
+            end
+
+            -- list that never changes the outfit: stop paying for scene builds
+            if written >= total or sinceNew >= npc_variants.giveUpAfter then
+                break
+            end
         end
-        rawName = rawName or "export"
-        local safeName = rawName:gsub("[^%w %._-]", "_")
-        exportRoot.name = safeName
 
-        local exportDir = settings.getOutputFolder() .. "\\exports"
-        render.ensureDirectory(exportDir .. "\\")
-        local fullPath = (exportDir .. "\\" .. safeName .. ".nif"):gsub("[/\\]+", "\\")
-
-        actors_metadata.attach(obj, exportRoot)
-
-        exportRoot:update()
-        exportRoot:saveBinary(fullPath)
-        return fullPath
+        return lastPath, written
     end
 
     local exportRow = actionBlock:createBlock()
@@ -1030,9 +1059,14 @@ function this.open(objOrSubject, options)
     local btnExport = exportRow:createButton({ text = "Export" })
     btnExport.widthProportional = 1.0
     btnExport:register(tes3.uiEvent.mouseClick, function()
-        local ok, result = pcall(exportSubject)
+        local ok, result, count = pcall(exportSubject)
         if ok then
-            tes3.messageBox("Exported: " .. result)
+            if (count or 1) > 1 then
+                tes3.messageBox(string.format("Exported %d variants, last: %s",
+                    count, tostring(result)))
+            else
+                tes3.messageBox("Exported: " .. tostring(result))
+            end
         else
             tes3.messageBox("Error exporting: " .. tostring(result))
         end
