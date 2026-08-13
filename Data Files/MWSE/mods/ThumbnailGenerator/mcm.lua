@@ -47,8 +47,8 @@ function this.registerModConfig()
     })
 
     local settingsPage = template:createSideBarPage({
-        label = "Render Settings",
-        description = "Configure output, rendering quality, projection, and batch filters.",
+        label = "Settings",
+        description = "Configure output, camera, batch and preview.",
     })
 
     local resolutionOptions = {}
