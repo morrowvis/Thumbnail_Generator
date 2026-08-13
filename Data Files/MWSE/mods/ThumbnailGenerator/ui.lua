@@ -63,11 +63,9 @@ function this.openMenu()
     contents.autoHeight = true
     contents.borderAllSides = 12
 
+    -- One hint for both actions; the button says which one runs.
     local function getTitleText()
-        if settings.current.batchMode == "export" then
-            return "Export from search (id/name/mesh path/.esp/.esm):"
-        end
-        return "Thumbnails from search (id/name/mesh path/.esp/.esm):"
+        return "Search (id/name/mesh path/.esp/.esm):"
     end
 
     local titleLabel = contents:createLabel({ text = getTitleText() })
@@ -105,13 +103,33 @@ function this.openMenu()
         tes3ui.acquireTextInput(searchInput)
     end)
 
-    searchInput:register(tes3.uiEvent.textUpdated, function()
+    local function syncClearButton()
         local hasText = searchInput.text ~= ""
         if btnClear.visible ~= hasText then
             btnClear.visible = hasText
             inputBlock:updateLayout()
         end
-    end)
+    end
+
+    searchInput:register(tes3.uiEvent.textUpdated, syncClearButton)
+
+    -- textUpdated only fires for typed characters, so a Ctrl+V paste changes the
+    -- text without it and the Clear button stays hidden. Poll while the menu is
+    -- open; the timer cancels itself once the menu is gone.
+    timer.start({
+        duration = 0.2,
+        iterations = -1,
+        -- real, not simulate: the menu runs in menu mode, where simulation is
+        -- paused and a simulate timer never fires.
+        type = timer.real,
+        callback = function(e)
+            if not tes3ui.findMenu(menuID) then
+                e.timer:cancel()
+                return
+            end
+            syncClearButton()
+        end,
+    })
 
     -- Fixed two-line block reserves the space so a one- vs two-line status message
     -- doesn't resize the menu (a bare label auto-sizes to its text and ignores height).
@@ -134,7 +152,11 @@ function this.openMenu()
     buttonBlock.childAlignX = 1.0
     buttonBlock.borderTop = 20
 
-    local btnRender = buttonBlock:createButton({ text = settings.current.batchMode == "export" and "Export" or "Batch" })
+    local function batchButtonText()
+        return settings.current.batchMode == "export" and "Export Batch" or "Render Batch"
+    end
+
+    local btnRender = buttonBlock:createButton({ text = batchButtonText() })
     btnRender.borderRight = 10
 
     local btnFlagged = buttonBlock:createButton({ text = "Flagged" })
@@ -213,9 +235,7 @@ function this.openMenu()
         -- Capture mode now so the completion message matches what actually ran,
         -- even if the MCM is changed while the batch is in flight.
         local isExportMode = (settings.current.batchMode == "export")
-        -- Sync title and button in case mode changed since the menu was opened.
-        titleLabel.text = getTitleText()
-        btnRender.text = isExportMode and "Export" or "Batch"
+        btnRender.text = batchButtonText()
         statusLabel.text = isExportMode and "Exporting batch... (Starting)" or "Rendering batch... (Starting)"
         statusLabel.color = getColor("active_color")
         hintLabel.text = "Space to cancel"
@@ -302,7 +322,8 @@ function this.openMenu()
         end
     end)
 
-    -- Renders only meshes listed in the flagged file, across all object types.
+    -- Only meshes listed in the flagged file, across all object types. Follows
+    -- the mode like the batch button, so flagged can be rendered or exported.
     btnFlagged:register(tes3.uiEvent.mouseClick, function()
         startBatch({ flaggedOnly = true })
     end)

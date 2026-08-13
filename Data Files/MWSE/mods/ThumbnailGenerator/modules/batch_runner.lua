@@ -133,17 +133,42 @@ end
 -- the last path is returned.
 local function exportSubject(subject)
     local obj = subject.object
-    local total, attempts = npc_variants.plan(obj)
-    local seen, written, lastPath = {}, 0, nil
-    local sinceNew = 0
 
-    for _ = 1, attempts do
-        local exportRoot, signature
+    local mode = settings.current.exportFilename
+    local rawName
+    if mode == "id" then
+        rawName = subject.recordId or subject.displayName
+    elseif mode == "mesh" then
+        if obj and obj.objectType == tes3.objectType.npc then
+            rawName = subject.recordId
+        else
+            local meshPath = subject.normalizedMeshPath
+            if meshPath and meshPath ~= "" then
+                rawName = meshPath:match("[^/]+$") or meshPath
+            end
+            rawName = rawName or subject.recordId or subject.displayName
+        end
+    else
+        rawName = subject.displayName or subject.recordId
+    end
+    rawName = rawName or "export"
+    local baseName = rawName:gsub("[^%w %._-]", "_")
+
+    local exportDir = settings.getOutputFolder() .. "\\exports"
+    renderer.ensureDirectory(exportDir .. "\\")
+
+    -- Outfits are chosen up front, so the file count always matches the plan.
+    -- An empty plan means one export, unchanged.
+    local picks = npc_variants.plan(obj)
+    local total = math.max(#picks, 1)
+    local lastPath
+
+    for i = 1, total do
+        local exportRoot
 
         if obj and (obj.objectType == tes3.objectType.npc
                 or obj.objectType == tes3.objectType.creature) then
-            local wrapper
-            wrapper, signature = scene_builder.createActorScene(obj)
+            local wrapper = scene_builder.createActorScene(obj, picks[i])
             exportRoot = wrapper.children[1]
             wrapper:detachChild(exportRoot)
         else
@@ -154,57 +179,18 @@ local function exportSubject(subject)
             exportRoot = mesh:clone()
         end
 
-        -- same outfit as an earlier roll = same mesh; roll again instead
-        local duplicate = total > 1 and written > 0
-            and (signature == nil or seen[signature])
-        if not duplicate then
-            if signature then seen[signature] = true end
-            written = written + 1
+        exportRoot.translation = tes3vector3.new(0, 0, 0)
+        exportRoot.name = npc_variants.name(baseName, i, total)
+        lastPath = (exportDir .. "\\" .. exportRoot.name .. ".nif"):gsub("[/\\]+", "\\")
+        actors_metadata.attach(obj, exportRoot)
+        exportRoot:update()
+        exportRoot:saveBinary(lastPath)
 
-            exportRoot.translation = tes3vector3.new(0, 0, 0)
-
-            local mode = settings.current.exportFilename
-            local rawName
-            if mode == "id" then
-                rawName = subject.recordId or subject.displayName
-            elseif mode == "mesh" then
-                if obj and obj.objectType == tes3.objectType.npc then
-                    rawName = subject.recordId
-                else
-                    local meshPath = subject.normalizedMeshPath
-                    if meshPath and meshPath ~= "" then
-                        rawName = meshPath:match("[^/]+$") or meshPath
-                    end
-                    rawName = rawName or subject.recordId or subject.displayName
-                end
-            else
-                rawName = subject.displayName or subject.recordId
-            end
-            rawName = rawName or "export"
-            local safeName = rawName:gsub("[^%w %._-]", "_")
-                .. npc_variants.suffix(written, total)
-            exportRoot.name = safeName
-
-            local exportDir = settings.getOutputFolder() .. "\\exports"
-            renderer.ensureDirectory(exportDir .. "\\")
-            lastPath = (exportDir .. "\\" .. safeName .. ".nif"):gsub("[/\\]+", "\\")
-
-            actors_metadata.attach(obj, exportRoot)
-
-            exportRoot:update()
-            exportRoot:saveBinary(lastPath)
-            sinceNew = 0
-        else
-            sinceNew = sinceNew + 1
-        end
-
-        -- list that never changes the outfit: stop paying for scene builds
-        if written >= total or sinceNew >= npc_variants.giveUpAfter then
-            break
-        end
+        exportRoot = nil
+        if i < total then npc_variants.releaseBetweenRolls() end
     end
 
-    return lastPath
+    return lastPath, total
 end
 
 -- Two phases per frame: reclaim completed compression jobs, then submit new

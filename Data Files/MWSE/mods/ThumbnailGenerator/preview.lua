@@ -731,6 +731,21 @@ function this.open(objOrSubject, options)
     actionBlock.widthProportional = 1.0
     actionBlock.autoHeight = true
 
+    -- The two actions this window exists for, first in the block. Their handlers
+    -- are registered further down, once the functions they call are defined.
+    local mainRow = actionBlock:createBlock()
+    mainRow.flowDirection = tes3.flowDirection.leftToRight
+    mainRow.widthProportional = 1.0
+    mainRow.autoHeight = true
+    mainRow.borderBottom = 6
+
+    local btnRenderTest = mainRow:createButton({ text = "Render" })
+    btnRenderTest.widthProportional = 1.0
+    btnRenderTest.borderRight = 6
+
+    local btnExport = mainRow:createButton({ text = "Export" })
+    btnExport.widthProportional = 1.0
+
     -- Save to session: copy the live preview's camera + lighting into the shared
     -- session config so batch renders adopt them (in memory only; not written to
     -- disk unless the MCM is opened and closed). Batch reads ortho from forceOrtho,
@@ -968,20 +983,46 @@ function this.open(objOrSubject, options)
     -- written, and how many were written.
     local function exportSubject()
         local obj = subject.object
-        local total, attempts = npc_variants.plan(obj)
-        local seen, written, lastPath = {}, 0, nil
-        local sinceNew = 0
 
-        for _ = 1, attempts do
-            local exportRoot, signature
+        -- Filename per the MCM option: display name, record id, or mesh base name.
+        -- Each falls back so a missing value never yields an empty filename.
+        local mode = settings.current.exportFilename
+        local rawName
+        if mode == "id" then
+            rawName = subject.recordId or subject.displayName
+        elseif mode == "mesh" then
+            -- NPCs are assembled from many meshes, so there is no single mesh name
+            -- to use; fall back to the record id for them.
+            if obj and obj.objectType == tes3.objectType.npc then
+                rawName = subject.recordId
+            else
+                local meshPath = subject.normalizedMeshPath
+                if meshPath and meshPath ~= "" then
+                    rawName = meshPath:match("[^/]+$") or meshPath
+                end
+                rawName = rawName or subject.recordId or subject.displayName
+            end
+        else
+            rawName = subject.displayName or subject.recordId
+        end
+        rawName = rawName or "export"
+        local baseName = rawName:gsub("[^%w %._-]", "_")
+
+        local exportDir = settings.getOutputFolder() .. "\\exports"
+        render.ensureDirectory(exportDir .. "\\")
+
+        -- Outfits are chosen up front, so the file count always matches the plan.
+        -- An empty plan means one export, unchanged.
+        local picks = npc_variants.plan(obj)
+        local total = math.max(#picks, 1)
+        local lastPath
+
+        for i = 1, total do
+            local exportRoot
 
             if obj and (obj.objectType == tes3.objectType.npc
                     or obj.objectType == tes3.objectType.creature) then
-                -- createActorScene wraps the posed clone so preview repositioning can't
-                -- disturb it; for export we want the clone itself as the file root, since
-                -- it carries the racial height/weight scale on its transform.
-                local wrapper
-                wrapper, signature = scene_builder.createActorScene(obj)
+                local wrapper = scene_builder.createActorScene(obj, picks[i])
                 exportRoot = wrapper.children[1]
                 wrapper:detachChild(exportRoot)
             else
@@ -992,72 +1033,20 @@ function this.open(objOrSubject, options)
                 exportRoot = mesh:clone()
             end
 
-            -- same outfit as an earlier roll = same mesh; roll again instead
-            local duplicate = total > 1 and written > 0
-                and (signature == nil or seen[signature])
-            if not duplicate then
-                if signature then seen[signature] = true end
-                written = written + 1
+            exportRoot.translation = tes3vector3.new(0, 0, 0)
+            exportRoot.name = npc_variants.name(baseName, i, total)
+            lastPath = (exportDir .. "\\" .. exportRoot.name .. ".nif"):gsub("[/\\]+", "\\")
+            actors_metadata.attach(obj, exportRoot)
+            exportRoot:update()
+            exportRoot:saveBinary(lastPath)
 
-                -- Drop world placement; keep the transform's scale/rotation (size + pose).
-                exportRoot.translation = tes3vector3.new(0, 0, 0)
-
-                -- Filename per the MCM option: display name, record id, or mesh base name.
-                -- Each falls back so a missing value never yields an empty filename.
-                local mode = settings.current.exportFilename
-                local rawName
-                if mode == "id" then
-                    rawName = subject.recordId or subject.displayName
-                elseif mode == "mesh" then
-                    -- NPCs are assembled from many meshes, so there is no single mesh name
-                    -- to use; fall back to the record id for them.
-                    if obj and obj.objectType == tes3.objectType.npc then
-                        rawName = subject.recordId
-                    else
-                        local meshPath = subject.normalizedMeshPath
-                        if meshPath and meshPath ~= "" then
-                            rawName = meshPath:match("[^/]+$") or meshPath
-                        end
-                        rawName = rawName or subject.recordId or subject.displayName
-                    end
-                else
-                    rawName = subject.displayName or subject.recordId
-                end
-                rawName = rawName or "export"
-                local safeName = rawName:gsub("[^%w %._-]", "_")
-                    .. npc_variants.suffix(written, total)
-                exportRoot.name = safeName
-
-                local exportDir = settings.getOutputFolder() .. "\\exports"
-                render.ensureDirectory(exportDir .. "\\")
-                lastPath = (exportDir .. "\\" .. safeName .. ".nif"):gsub("[/\\]+", "\\")
-
-                actors_metadata.attach(obj, exportRoot)
-
-                exportRoot:update()
-                exportRoot:saveBinary(lastPath)
-                sinceNew = 0
-            else
-                sinceNew = sinceNew + 1
-            end
-
-            -- list that never changes the outfit: stop paying for scene builds
-            if written >= total or sinceNew >= npc_variants.giveUpAfter then
-                break
-            end
+            exportRoot = nil
+            if i < total then npc_variants.releaseBetweenRolls() end
         end
 
-        return lastPath, written
+        return lastPath, total
     end
 
-    local exportRow = actionBlock:createBlock()
-    exportRow.flowDirection = tes3.flowDirection.leftToRight
-    exportRow.widthProportional = 1.0
-    exportRow.autoHeight = true
-    exportRow.borderBottom = 6
-
-    local btnExport = exportRow:createButton({ text = "Export" })
-    btnExport.widthProportional = 1.0
     btnExport:register(tes3.uiEvent.mouseClick, function()
         local ok, result, count = pcall(exportSubject)
         if ok then
@@ -1072,15 +1061,6 @@ function this.open(objOrSubject, options)
         end
     end)
 
-    -- Perform test render & close
-    local mainRow = actionBlock:createBlock()
-    mainRow.flowDirection = tes3.flowDirection.leftToRight
-    mainRow.widthProportional = 1.0
-    mainRow.autoHeight = true
-
-    local btnRenderTest = mainRow:createButton({ text = "Render" })
-    btnRenderTest.widthProportional = 1.0
-    btnRenderTest.borderRight = 6
     btnRenderTest:register(tes3.uiEvent.mouseClick, function()
         local mPath = subject.meshPath
         -- Same NPC-aware path logic as batch rendering, just under "preview".
@@ -1143,7 +1123,12 @@ function this.open(objOrSubject, options)
         end
     end)
 
-    local btnClosePreview = mainRow:createButton({ text = "Exit" })
+    local exitRow = actionBlock:createBlock()
+    exitRow.flowDirection = tes3.flowDirection.leftToRight
+    exitRow.widthProportional = 1.0
+    exitRow.autoHeight = true
+
+    local btnClosePreview = exitRow:createButton({ text = "Exit" })
     btnClosePreview.widthProportional = 1.0
     btnClosePreview:register(tes3.uiEvent.mouseClick, function()
         controlsMenu:destroy()

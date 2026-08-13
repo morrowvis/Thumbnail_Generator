@@ -7,7 +7,6 @@ local this = {}
 local bit = require("bit")
 
 local settings = require("ThumbnailGenerator.modules.thumbnail_settings")
-local npc_variants = require("ThumbnailGenerator.modules.npc_variants")
 
 -- Animation text keys ("Idle: Loop Start") live in the keyframe manager's
 -- sequences, not node extra data; one key's text can hold several markers.
@@ -91,10 +90,10 @@ end
 
 -- Actor visuals/animations are wired up at instancing time, not on the record:
 -- spawn a temporary reference, pose it, clone the scene node, delete the reference.
--- Returns the scene, and the instance's equipment signature as a second value -
--- levelled lists resolve per reference, so this is what tells one roll of the
--- same NPC from another. Existing callers can ignore it.
-function this.createActorScene(actor)
+-- `forceItems` is an optional list of item ids to equip on the instance before
+-- it is posed, so an NPC with levelled gear can be exported wearing a chosen
+-- outfit instead of whatever the engine happened to roll.
+function this.createActorScene(actor, forceItems)
     local player = tes3.player
     local ref = tes3.createReference({
         object = actor,
@@ -104,13 +103,19 @@ function this.createActorScene(actor)
         orientation = tes3vector3.new(0, 0, 0),
     })
 
-    local signature
     local ok, result = pcall(function()
         if not ref or not ref.sceneNode then
             error("Failed to instance actor reference: " .. tostring(actor.id))
         end
-        -- read before the reference is deleted below
-        signature = npc_variants.signature(ref)
+
+        -- Equipping replaces whatever the levelled list rolled into the same
+        -- slot. Done before the pose so the body parts are already swapped.
+        for _, id in ipairs(forceItems or {}) do
+            pcall(tes3.equip, {
+                reference = ref, item = id, addItem = true,
+                bypassEquipEvents = true, playSound = false,
+            })
+        end
 
         -- Idle loop midpoint = settled stance; engine timing is the fallback.
         local textKeys = collectTextKeys(ref.sceneNode)
@@ -174,7 +179,7 @@ function this.createActorScene(actor)
     if not ok then
         error(result)
     end
-    return result, signature
+    return result
 end
 
 -- Without the Follow bit, particles stay where the mesh first loaded instead
