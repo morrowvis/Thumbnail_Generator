@@ -84,20 +84,24 @@ function this.plan(obj)
     local ok, sets = pcall(outcomeSets, obj)
     if not ok or #sets == 0 then return {} end
 
-    local widest = 0
+    -- A guard with 3 helmets and 3 weapons has 9 looks, not 3. Count the
+    -- COMBINATIONS across lists, not the longest one - taking the i-th entry
+    -- from every list in lockstep only ever walks the diagonal.
+    local combinations = 1
     for _, ids in ipairs(sets) do
-        widest = math.max(widest, #ids)
+        combinations = combinations * #ids
     end
-    local total = math.min(wanted, widest)
+    local total = math.min(wanted, combinations)
     if total < 2 then return {} end
 
-    -- Copy i takes the i-th option from every list, wrapping on the short ones,
-    -- so each copy differs in at least the list that has the most options.
+    -- Copy i is combination i, enumerated as a mixed-radix number: the first
+    -- list changes every copy, the second every #list1 copies, and so on.
     local picks = {}
     for i = 1, total do
-        local pick = {}
+        local n, pick = i - 1, {}
         for _, ids in ipairs(sets) do
-            table.insert(pick, ids[((i - 1) % #ids) + 1])
+            table.insert(pick, ids[(n % #ids) + 1])
+            n = math.floor(n / #ids)
         end
         picks[i] = pick
     end

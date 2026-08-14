@@ -972,6 +972,7 @@ function this.open(objOrSubject, options)
 
     local btnSaveProfile = profileRow:createButton({ text = "Save profile..." })
     btnSaveProfile.widthProportional = 1.0
+    btnSaveProfile.borderRight = 6
     btnSaveProfile:register(tes3.uiEvent.mouseClick, openProfilePopup)
 
     -- Export the currently open object as a .nif under "<output>/exports".
@@ -1123,12 +1124,8 @@ function this.open(objOrSubject, options)
         end
     end)
 
-    local exitRow = actionBlock:createBlock()
-    exitRow.flowDirection = tes3.flowDirection.leftToRight
-    exitRow.widthProportional = 1.0
-    exitRow.autoHeight = true
-
-    local btnClosePreview = exitRow:createButton({ text = "Exit" })
+    -- shares the profile row, so the window ends on one line
+    local btnClosePreview = profileRow:createButton({ text = "Exit" })
     btnClosePreview.widthProportional = 1.0
     btnClosePreview:register(tes3.uiEvent.mouseClick, function()
         controlsMenu:destroy()
