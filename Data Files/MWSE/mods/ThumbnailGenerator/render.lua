@@ -320,7 +320,7 @@ function this.getOutputPath(subject, fallbackMeshPath, subFolder)
     local isPreview = (subFolder == "preview")
     local path
     if subject and subject.object and subject.object.objectType == tes3.objectType.npc then
-        local namePart = subject.recordId or "unknown"
+        local namePart = (subject.recordId or "unknown"):lower()
         -- NPCs get their own "npc" folder (parallel to the mesh-path folder), in both
         -- the batch output and the preview scratch folder.
         if isPreview then
@@ -341,9 +341,7 @@ function this.getOutputPath(subject, fallbackMeshPath, subFolder)
             path = string.format("%s/batch/%s/%s.png", basePath, subFolder, meshName)
         end
     end
-    -- Every output path is lowercased, folders included -- not just the mesh-derived
-    -- filename (which normalizeMeshPath already lowercases on its own).
-    return path:lower()
+    return path
 end
 
 local renderTarget = nil

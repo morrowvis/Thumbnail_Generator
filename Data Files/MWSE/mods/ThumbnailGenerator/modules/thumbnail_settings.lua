@@ -41,10 +41,10 @@ local function stripDataFilesPrefix(folder)
     return folder
 end
 
--- Output folder resolved under Data Files with exactly one "data files\" prefix.
+-- Output folder resolved under Data Files with exactly one "Data Files\" prefix.
 -- Callers should use this instead of reading `this.current.outputFolder` directly.
 function this.getOutputFolder()
-    return "data files\\" .. stripDataFilesPrefix(this.current.outputFolder or "Thumbnail Generator")
+    return "Data Files\\" .. stripDataFilesPrefix(this.current.outputFolder or "Thumbnail Generator")
 end
 
 -- Object types currently enabled in the per-category settings toggles.
