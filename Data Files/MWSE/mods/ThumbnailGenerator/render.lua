@@ -75,6 +75,7 @@ this.createActorScene = scene_builder.createActorScene
 this.createRenderableScene = scene_builder.createRenderableScene
 this.createRootNode = scene_builder.createRootNode
 this.adaptParticleBlends = scene_builder.adaptParticleBlends
+this.forceDoubleSided = scene_builder.forceDoubleSided
 
 
 -- Subject orientation as a turntable orbit: yaw = azimuth about world up,
@@ -418,6 +419,9 @@ function this.render(params)
             savedLodAdjust = nil
         end
     end
+    -- Set when double-sided drawing is turned on, up front or as the empty-capture
+    -- fallback; the stencil properties it flips are shared, so it must be undone.
+    local restoreDoubleSided = function() end
     local savedPlaneColor = nil
     local function restorePlaneColor()
         if savedPlaneColor then
@@ -451,6 +455,14 @@ function this.render(params)
         end
 
         root = this.createRootNode(scene, alphaPlane)
+
+        -- Config-level override: draw everything double-sided from the start,
+        -- rather than only rescuing a capture that came out empty.
+        local doubleSided = settings.current.forceDoubleSided == true
+        if doubleSided then
+            restoreDoubleSided = this.forceDoubleSided(root)
+        end
+
         lights = this.addThumbnailLighting({
             root = root,
             scene = scene,
@@ -501,10 +513,17 @@ function this.render(params)
             mwse.log("[ThumbnailGen] Warning: backdrop material not found; using framebuffer alpha")
         end
 
-        clickInto(targetPixelData)
-        local ptrA = matte.pixelPtr(targetPixelData)
-        local ptrB
-        if matteReady then
+        local ptrA, ptrB
+
+        -- Captures the black/white pair and measures what actually drew. Ends on
+        -- a white backdrop, which the refit below relies on.
+        local function captureAndScan()
+            if matteReady then matte.setPlaneColor(alphaPlane, 0) end
+            clickInto(targetPixelData)
+            ptrA = matte.pixelPtr(targetPixelData)
+            if not matteReady then
+                return matte.scanContentAlpha(ptrA, resolution)
+            end
             matte.setPlaneColor(alphaPlane, 1)
             if matteScratch and (matteScratch:getWidth() ~= resolution or matteScratch:getHeight() ~= resolution) then
                 matteScratch = nil
@@ -512,17 +531,23 @@ function this.render(params)
             matteScratch = matteScratch or niPixelData.new(resolution, resolution)
             clickInto(matteScratch)
             ptrB = matte.pixelPtr(matteScratch)
+            return matte.scanContentBBox(ptrA, ptrB, resolution)
         end
 
         -- Refit to the rendered pixels: geometry fitting only approximates what draws.
-        local minX, minY, maxX, maxY
-        if matteReady then
-            minX, minY, maxX, maxY = matte.scanContentBBox(ptrA, ptrB, resolution)
-        else
-            minX, minY, maxX, maxY = matte.scanContentAlpha(ptrA, resolution)
+        local minX, minY, maxX, maxY = captureAndScan()
+
+        -- An empty capture usually means culling, not an empty record: meshes
+        -- with inside-out normals or single-sided planes show this camera
+        -- nothing but back faces. Draw both faces and capture once more before
+        -- writing the subject off.
+        if minX == nil and not doubleSided then
+            doubleSided = true
+            restoreDoubleSided = this.forceDoubleSided(root)
+            minX, minY, maxX, maxY = captureAndScan()
         end
 
-        -- Nothing visible rendered (e.g. a record with no drawable content):
+        -- Still nothing visible (e.g. a record with no drawable content):
         -- skip the file entirely rather than writing a blank PNG.
         if minX == nil and params.skipEmpty then
             camera.renderer:setRenderTarget(nil)
@@ -530,6 +555,7 @@ function this.render(params)
             restoreLodAdjust()
             restorePlaneColor()
             restoreParticleBlends()
+            restoreDoubleSided()
             for _, light in ipairs(lights) do
                 light:detachAffectedNode(scene)
                 root:detachChild(light)
@@ -562,10 +588,12 @@ function this.render(params)
 
         camera.renderer:setRenderTarget(nil)
 
-        -- Frustum, LOD, and blend overrides were only needed for the clicks above.
+        -- Frustum, LOD, blend and culling overrides were only needed for the
+        -- clicks above.
         restoreFrustum()
         restoreLodAdjust()
         restoreParticleBlends()
+        restoreDoubleSided()
 
         -- The image_resize DLL selects the output format from the extension.
         local outputFormat = params.outputFormat
@@ -632,6 +660,7 @@ function this.render(params)
         -- mid-matte.
         pcall(restorePlaneColor)
         pcall(restoreParticleBlends)
+        pcall(restoreDoubleSided)
         if camera then
             if camera.renderer then
                 local rtOk, rtErr = pcall(camera.renderer.setRenderTarget, camera.renderer, nil)

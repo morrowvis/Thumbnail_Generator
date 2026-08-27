@@ -272,7 +272,7 @@ function this.openMenu()
                         else
                             text = string.format("Rendered %d thumbnails.", successCount)
                             if emptyCount and emptyCount > 0 then
-                                text = text .. string.format(" %d empty skipped.", emptyCount)
+                                text = text .. string.format(" %d empty renders skipped.", emptyCount)
                             end
                         end
                         if failedCount and failedCount > 0 then

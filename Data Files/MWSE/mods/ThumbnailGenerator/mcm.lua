@@ -154,8 +154,10 @@ function this.registerModConfig()
 
     group:createYesNoButton({
         label = "NPC Filtering",
-        description = "When enabled, batch rendering only includes NPCs that respawn and have no attached script (and skips a small blacklist of duplicate guard/ordinator records).\n\z
-            When disabled, every NPC record is rendered.",
+        description = "Enabled: an NPC is only batch rendered if it is flagged as respawning and has no attached script, and a small blacklist of duplicate guard/ordinator records is skipped. \z
+            That keeps the generic population and drops unique characters.\n\z
+            Disabled: every NPC record is rendered.\n\z
+            Two config.lua keys tune it further: npcRequireRespawn drops the respawn half of the check, and an id containing npcIncludePattern (default \"outfit\") is rendered either way. Export mode ignores the filter entirely.",
         variable = mwse.mcm.createTableVariable({ id = "npcFiltering", table = settings.current }),
     })
 

@@ -26,6 +26,11 @@ local config = {
     forceOrtho = true,
     fitToFrame = true,
 
+    -- Draw every subject double-sided instead of only rescuing renders that come
+    -- out empty. Costs nothing on well-built meshes, but open-backed geometry
+    -- (capes, tent interiors) shows faces the artist meant to be culled.
+    forceDoubleSided = false,
+
     orthoDistanceFactor = 200, -- higher = flatter
     perspectiveDistanceFactor = 8, -- lower = wider-angle look
 
@@ -53,7 +58,7 @@ local config = {
     batchMode = "thumbnails",
 
     skipEmptyRenders = true,
-    skipExistingThumbnails = false,
+    skipExistingThumbnails = true,
     renderOnlyRotationExceptions = false,
 
     npcFiltering = true,

@@ -1,7 +1,8 @@
 -- Scene construction/normalization: turns a record into a renderable scene
 -- (plain records: mesh load + clone; actors: temporary posed reference) and
 -- fixes up everything a static offscreen capture needs -- particle follow bits,
--- helper-node culling, switch-node pinning, and capture-safe particle blends.
+-- helper-node culling, switch-node pinning, capture-safe particle blends, and
+-- double-sided drawing for meshes that would otherwise cull themselves away.
 local this = {}
 
 local bit = require("bit")
@@ -297,6 +298,55 @@ function this.adaptParticleBlends(scene)
             pcall(function() entry.prop.propertyFlags = entry.flags end)
         end
         restores = {}
+    end
+end
+
+-- Backface culling is per-shape: niStencilProperty.drawMode, inherited from the
+-- nearest ancestor carrying one. A mesh that shows the camera nothing but back
+-- faces (inside-out normals, single-sided planes) draws literally nothing, so
+-- the only way to capture it is to stop culling. Stencil properties are shared
+-- with live world instances through the mesh cache, so this returns a restore
+-- function that callers must run.
+function this.forceDoubleSided(root)
+    local stencilType = ni.propertyType and ni.propertyType.stencil
+    if not stencilType then return function() end end
+    local both = ni.stencilDrawMode and ni.stencilDrawMode.both or 3
+
+    local restores = {}
+    local seen = {}
+    for node in table.traverse({ root }) do
+        local stencil = node:getProperty(stencilType)
+        if stencil and not seen[stencil] then
+            seen[stencil] = true
+            local drawMode = stencil.drawMode
+            if drawMode ~= both and pcall(function() stencil.drawMode = both end) then
+                table.insert(restores, { prop = stencil, drawMode = drawMode })
+            end
+        end
+    end
+
+    -- Shapes with no stencil property of their own inherit this one. Only its
+    -- draw mode matters here; the stencil test itself stays off.
+    local added = niStencilProperty and niStencilProperty.new()
+    if added then
+        added.enabled = false
+        added.drawMode = both
+        root:attachProperty(added)
+    end
+    root:updateProperties()
+
+    return function()
+        for _, entry in ipairs(restores) do
+            pcall(function() entry.prop.drawMode = entry.drawMode end)
+        end
+        restores = {}
+        if added then
+            -- The root is the live scene while a preview holds it open, so the
+            -- inherited override can't be left behind.
+            added = nil
+            pcall(function() root:detachProperty(stencilType) end)
+            pcall(function() root:updateProperties() end)
+        end
     end
 end
 
