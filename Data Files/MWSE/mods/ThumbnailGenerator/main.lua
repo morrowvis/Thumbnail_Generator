@@ -4,7 +4,7 @@ local function initialized()
 
         event.register(tes3.event.keyDown, function(e)
             if tes3ui.menuMode() then return end
-            if e.isShiftDown and not e.isControlDown and not e.isAltDown and e.keyCode == tes3.scanCode.g then
+            if e.isShiftDown and e.keyCode == tes3.scanCode.g then
                 require("ThumbnailGenerator.ui").openMenu()
             end
         end)
