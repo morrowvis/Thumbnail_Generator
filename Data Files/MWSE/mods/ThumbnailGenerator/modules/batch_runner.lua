@@ -14,6 +14,9 @@ local ir = require("image_resize.image_resize")
 
 local poolSize = 4
 
+-- Trailing bytes of a complete PNG: the empty IEND chunk and its constant CRC.
+local pngFooter = "IEND" .. string.char(174, 66, 96, 130)
+
 -- NPC keep rule: keep an NPC only if its id isn't blacklisted, its RESPAWN flag
 -- is set, and it has no script. Gated behind the "NPC Filtering" MCM setting;
 -- the respawn requirement and the always-include pattern come from config.
@@ -55,14 +58,27 @@ function this.isBatchActive()
     return activeBatch ~= nil
 end
 
--- True if this subject's output file already exists (extension follows the
--- batch output format, matching what render() writes).
+-- True if this subject's output file already exists and is complete (extension
+-- follows the batch output format, matching what render() writes). An out-of-memory
+-- session leaves behind truncated files at normal sizes as well as empty ones, so
+-- PNGs are checked for their IEND terminator instead of trusting the size.
 local function thumbnailExists(subject, meshPath)
     local outputPath = renderer.getOutputPath(subject, meshPath)
     local format = settings.current.outputFormat
     if format ~= "tga" and format ~= "dds" then format = "png" end
     outputPath = outputPath:gsub("%.%a+$", "") .. "." .. format
-    return lfs.fileexists(outputPath)
+
+    local size = lfs.attributes(outputPath, "size")
+    if not size or size < 8 then return false end
+    -- tga/dds carry no reliable end marker; a non-empty file is all there is to test.
+    if format ~= "png" then return true end
+
+    local file = io.open(outputPath, "rb")
+    if not file then return false end
+    file:seek("end", -8)
+    local footer = file:read(8)
+    file:close()
+    return footer == pngFooter
 end
 
 -- Reads the flagged list (one pattern per line) from the output folder and

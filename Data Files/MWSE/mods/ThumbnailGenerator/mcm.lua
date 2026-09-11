@@ -141,7 +141,8 @@ function this.registerModConfig()
     group:createYesNoButton({
         label = "Skip Existing Thumbnails",
         description = "Don't re-render an item whose output file already exists in the output folder.\n\z
-            Useful for resuming a large batch without redoing finished thumbnails.",
+            Useful for resuming a large batch without redoing finished thumbnails.\n\z
+            Incomplete files left behind by a crash are re-rendered.",
         variable = mwse.mcm.createTableVariable({ id = "skipExistingThumbnails", table = settings.current }),
     })
 
