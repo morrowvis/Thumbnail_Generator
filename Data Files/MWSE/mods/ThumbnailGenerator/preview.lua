@@ -1022,7 +1022,10 @@ function this.open(objOrSubject, options)
 
             if obj and (obj.objectType == tes3.objectType.npc
                     or obj.objectType == tes3.objectType.creature) then
-                local wrapper = scene_builder.createActorScene(obj, picks[i])
+                -- true: export at the base animation's frame 0, not the idle
+                -- midpoint, so the saved node transforms match base_anim's own
+                -- rest and the actor can still share a skeleton in Unreal
+                local wrapper = scene_builder.createActorScene(obj, picks[i], true)
                 exportRoot = wrapper.children[1]
                 wrapper:detachChild(exportRoot)
             else

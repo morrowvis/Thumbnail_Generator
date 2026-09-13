@@ -184,7 +184,7 @@ local function exportSubject(subject)
 
         if obj and (obj.objectType == tes3.objectType.npc
                 or obj.objectType == tes3.objectType.creature) then
-            local wrapper = scene_builder.createActorScene(obj, picks[i])
+            local wrapper = scene_builder.createActorScene(obj, picks[i], true)
             exportRoot = wrapper.children[1]
             wrapper:detachChild(exportRoot)
         else
