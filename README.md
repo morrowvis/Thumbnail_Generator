@@ -17,4 +17,5 @@ In use by: [oaab.dev](https://www.oaab.dev/library/)
 
 ### Installation
 
-* Install as mod from releases
+* Download from releases and install as a mod.
+* Go to Morrowind Script Extender MCM: Enable `Run Morrowind in the background?`
