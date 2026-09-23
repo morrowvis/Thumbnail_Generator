@@ -13,7 +13,8 @@ In use by: [oaab.dev](https://www.oaab.dev/library/)
 ### Prerequisites
 
 * Latest version of MWSE
-* [MGE XE UF](https://www.nexusmods.com/morrowind/mods/57200)
+* [MGE XE G7 Fork](https://www.nexusmods.com/morrowind/mods/59957) or 
+* [MGE XE UF](https://www.nexusmods.com/morrowind/mods/57200) with use shared memory enabled
 
 ### Installation
 
